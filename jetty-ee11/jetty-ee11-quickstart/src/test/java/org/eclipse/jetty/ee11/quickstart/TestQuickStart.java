@@ -29,6 +29,7 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * TestQuickStart
  */
+@Isolated
 public class TestQuickStart
 {
     Server server;
@@ -47,6 +49,8 @@ public class TestQuickStart
     public void setUp()
     {
         server = new Server();
+        FooContextListener.___initialized = 0;
+        FooContextListener.__destroyed = 0;
     }
     
     @AfterEach

@@ -228,8 +228,9 @@ public class FixedSizeBuffer implements WritableBuffer, ReadableBuffer
         if (flushPosition == -1)
             throw new IllegalStateException("Cannot write to buffer in read mode");
         int remainingBefore = byteBuffer.remaining();
-        fount.read(byteBuffer);
-        return remainingBefore - byteBuffer.remaining();
+        boolean eof = fount.read(byteBuffer);
+        int read = remainingBefore - byteBuffer.remaining();
+        return read == 0L && eof ? -1L : read;
     }
 
     // Retainable

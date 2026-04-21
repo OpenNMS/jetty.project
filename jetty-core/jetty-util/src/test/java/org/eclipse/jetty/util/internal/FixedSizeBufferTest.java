@@ -126,6 +126,10 @@ public class FixedSizeBufferTest
         assertEquals((byte)3, rb.get());
         assertEquals((byte)4, rb.get());
         assertEquals(0L, rb.remaining());
+
+        wb = rb.toWritable();
+        read = wb.readFrom(byteBufferToReadInto -> true);
+        assertEquals(-1L, read);
     }
 
     @Test

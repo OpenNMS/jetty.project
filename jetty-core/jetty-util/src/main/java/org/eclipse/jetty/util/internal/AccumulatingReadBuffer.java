@@ -238,17 +238,15 @@ public class AccumulatingReadBuffer implements ReadableBuffer
     }
 
     @Override
-    public void compact()
+    public WritableBuffer compact()
     {
         throw new IllegalStateException("Read-only instance");
     }
 
     @Override
-    public void clear()
+    public WritableBuffer clear()
     {
-        readableBuffers.forEach(rb -> rb.position(0));
-        updateLimits(readableBuffers, limits);
-        position = 0L;
+        throw new IllegalStateException("Read-only instance");
     }
 
     @Override

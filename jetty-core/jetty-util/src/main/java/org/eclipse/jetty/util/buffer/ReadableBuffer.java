@@ -57,9 +57,9 @@ public interface ReadableBuffer extends Retainable
 
     ReadableBuffer slice(long position, long length);
 
-    void compact();
+    WritableBuffer compact();
 
-    void clear();
+    WritableBuffer clear();
 
     WritableBuffer toWritable();
 

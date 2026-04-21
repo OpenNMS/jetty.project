@@ -56,8 +56,6 @@ public interface WritableBuffer extends Retainable
 
     void putLong(long l);
 
-    void clear();
-
     ReadableBuffer toReadable();
 
     long readFrom(Fount fount) throws IOException;

@@ -528,24 +528,11 @@ public class AccumulatingReadBufferTest
             .flip());
         ReadableBuffer acc = ReadableBuffer.accumulate(List.of(rb1, rb2));
 
-        assertEquals(0, acc.position());
-        assertEquals(4, acc.remaining());
-
-        assertEquals(1, acc.getInt());
-        assertEquals(4, acc.position());
-        assertEquals(0, acc.remaining());
-
-        acc.clear();
-        assertEquals(0, acc.position());
-        assertEquals(4, acc.remaining());
-
-        assertEquals(1, acc.getInt());
-        assertEquals(4, acc.position());
-        assertEquals(0, acc.remaining());
+        assertThrows(IllegalStateException.class, acc::clear);
     }
 
     @Test
-    public void testByteBuffersNotAtZeroPositionGetAndClear()
+    public void testByteBuffersNotAtZeroPositionGet()
     {
         ReadableBuffer rb1 = ReadableBuffer.wrap(ByteBuffer.allocate(10)
             .put((byte)0)
@@ -553,7 +540,7 @@ public class AccumulatingReadBufferTest
             .flip()
             .position(1));
         ReadableBuffer rb2 = ReadableBuffer.wrap(ByteBuffer.allocate(10)
-            .put((byte)0)
+            .put((byte)9)
             .put((byte)1)
             .flip()
             .position(1));
@@ -563,13 +550,6 @@ public class AccumulatingReadBufferTest
         assertEquals(2, acc.remaining());
         assertEquals(1, acc.getShort());
 
-        assertEquals(4, acc.position());
-        assertEquals(0, acc.remaining());
-
-        acc.clear();
-        assertEquals(0, acc.position());
-        assertEquals(4, acc.remaining());
-        assertEquals(1, acc.getInt());
         assertEquals(4, acc.position());
         assertEquals(0, acc.remaining());
     }

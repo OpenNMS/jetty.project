@@ -193,9 +193,13 @@ public class FixedSizeBuffer implements WritableBuffer, ReadableBuffer
     }
 
     @Override
-    public void clear()
+    public WritableBuffer clear()
     {
+        if (flushPosition != -1)
+            throw new IllegalStateException("Cannot clear buffer in write mode");
+        toWritable();
         byteBuffer.position(0);
+        return this;
     }
 
     @Override
@@ -210,11 +214,12 @@ public class FixedSizeBuffer implements WritableBuffer, ReadableBuffer
     }
 
     @Override
-    public void compact()
+    public WritableBuffer compact()
     {
         if (flushPosition != -1)
             throw new IllegalStateException("Cannot compact buffer in write mode");
         byteBuffer.compact().flip();
+        return toWritable();
     }
 
     @Override

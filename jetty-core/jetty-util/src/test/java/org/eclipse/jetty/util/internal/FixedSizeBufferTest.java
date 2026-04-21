@@ -152,11 +152,7 @@ public class FixedSizeBufferTest
         assertEquals(1, writtenByteBuffers.size());
         assertEquals(4, rb.remaining());
         assertEquals(8, rb.position());
-        rb.compact();
-        assertEquals(4, rb.remaining());
-        assertEquals(0, rb.position());
-
-        WritableBuffer wb = rb.toWritable();
+        WritableBuffer wb = rb.compact();
         assertEquals(10, wb.remaining());
         assertEquals(4, wb.position());
     }
@@ -169,11 +165,10 @@ public class FixedSizeBufferTest
         assertEquals(0, rb.position());
         assertEquals(0, rb.remaining());
 
-        rb.compact();
+        WritableBuffer wb = rb.compact();
         assertEquals(0, rb.position());
-        assertEquals(0, rb.remaining());
+        assertEquals(10, rb.remaining());
 
-        WritableBuffer wb = rb.toWritable();
         wb.putInt(1);
         wb.putShort((short)2);
 
@@ -181,19 +176,19 @@ public class FixedSizeBufferTest
         assertEquals(0, rb1.position());
         assertEquals(6, rb1.remaining());
 
-        rb1.compact();
+        rb1.compact().toReadable();
         assertEquals(0, rb1.position());
         assertEquals(6, rb1.remaining());
         assertEquals(1, rb1.getInt());
         assertEquals(4, rb1.position());
         assertEquals(2, rb1.remaining());
 
-        rb1.compact();
+        rb1.compact().toReadable();
         assertEquals(0, rb1.position());
         assertEquals(2, rb1.remaining());
         assertEquals(2, rb1.getShort());
 
-        rb1.compact();
+        rb1.compact().toReadable();
         assertEquals(0, rb1.position());
         assertEquals(0, rb1.remaining());
     }
@@ -211,27 +206,8 @@ public class FixedSizeBufferTest
         assertEquals(2, rb.getInt());
         assertEquals(0, rb.remaining());
 
-        rb.clear();
+        WritableBuffer wb = rb.clear();
 
-        assertEquals(8, rb.remaining());
-        assertEquals(1, rb.getInt());
-        assertEquals(2, rb.getInt());
-        assertEquals(0, rb.remaining());
-    }
-
-    @Test
-    public void testWritableBufferClear()
-    {
-        WritableBuffer wb = WritableBuffer.wrap(ByteBuffer.allocate(10)
-            .putInt(1));
-
-        assertEquals(4, wb.position());
-        assertEquals(6, wb.remaining());
-        wb.putInt(2);
-        assertEquals(8, wb.position());
-        assertEquals(2, wb.remaining());
-
-        wb.clear();
         assertEquals(0, wb.position());
         assertEquals(10, wb.remaining());
     }

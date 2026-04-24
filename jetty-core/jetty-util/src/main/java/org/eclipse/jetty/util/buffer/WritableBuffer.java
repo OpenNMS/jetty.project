@@ -46,8 +46,6 @@ public interface WritableBuffer extends Retainable
 
     long remaining();
 
-    long availableForRead();
-
     void put(byte b);
 
     void put(ReadableBuffer readableBuffer);

@@ -453,9 +453,9 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
             {
                 fillState = _fillState;
                 flushState = _flushState;
-                encryptedInputRemainingBytes = _encryptedInput == null ? -1 : remaining(_encryptedInput);
-                encryptedOutputRemainingBytes = _encryptedOutput == null ? -1 : remaining(_encryptedOutput);
-                decryptedInputRemainingBytes = _decryptedInput == null ? -1 : remaining(_decryptedInput);
+                encryptedInputRemainingBytes = _encryptedInput == null ? -1 : remainingForRead(_encryptedInput);
+                encryptedOutputRemainingBytes = _encryptedOutput == null ? -1 : remainingForRead(_encryptedOutput);
+                decryptedInputRemainingBytes = _decryptedInput == null ? -1 : remainingForRead(_decryptedInput);
             }
             else
             {
@@ -479,7 +479,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
     private void lockedReleaseEmptyEncryptedInputBuffer()
     {
         assert _lock.isHeldByCurrentThread();
-        if (_encryptedInput != null && remaining(_encryptedInput) == 0L)
+        if (_encryptedInput != null && remainingForRead(_encryptedInput) == 0L)
         {
             _encryptedInput.release();
             _encryptedInput = null;
@@ -489,7 +489,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
     private void lockedReleaseEmptyDecryptedInputBuffer()
     {
         assert _lock.isHeldByCurrentThread();
-        if (_decryptedInput != null && remaining(_decryptedInput) == 0L)
+        if (_decryptedInput != null && remainingForRead(_decryptedInput) == 0L)
         {
             _decryptedInput.release();
             _decryptedInput = null;
@@ -523,7 +523,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
     private void lockedReleaseEmptyEncryptedOutputBuffer()
     {
         assert _lock.isHeldByCurrentThread();
-        if (_encryptedOutput != null && remaining(_encryptedOutput) == 0L)
+        if (_encryptedOutput != null && remainingForRead(_encryptedOutput) == 0L)
         {
             _encryptedOutput.release();
             _encryptedOutput = null;
@@ -709,7 +709,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                             return filled = 0;
 
                         // Do we already have some decrypted data?
-                        if (_decryptedInput != null && remaining(_decryptedInput) > 0L)
+                        if (_decryptedInput != null && remainingForRead(_decryptedInput) > 0L)
                         {
                             ReadableBuffer rb = _decryptedInput.toReadable();
                             filled = append(buffer, rb);
@@ -782,7 +782,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                                 LOG.debug("net filled={}", netFilled);
 
                             // Workaround for Java 11 behavior.
-                            if (netFilled < 0 && isHandshakeInitial() && (_encryptedInput == null || remaining(_encryptedInput) == 0L))
+                            if (netFilled < 0 && isHandshakeInitial() && (_encryptedInput == null || remainingForRead(_encryptedInput) == 0L))
                                 closeInbound();
 
                             if (netFilled > 0 && !isHandshakeComplete() && isOutboundDone())
@@ -878,7 +878,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                                     // too small. Release the decrypted input buffer so it will be re-acquired
                                     // with the larger capacity.
                                     // See also system property "jsse.SSLEngine.acceptLargeFragments".
-                                    if ((_decryptedInput == null || remaining(_decryptedInput) == 0L) && appBufferSize < getApplicationBufferSize())
+                                    if ((_decryptedInput == null || remainingForRead(_decryptedInput) == 0L) && appBufferSize < getApplicationBufferSize())
                                     {
                                         lockedReleaseEmptyDecryptedInputBuffer();
                                         continue;
@@ -969,7 +969,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                         return;
 
                     // Fillable if we have decrypted input OR enough encrypted input.
-                    fillable = (_decryptedInput != null && remaining(_decryptedInput) > 0L) || (_encryptedInput != null && remaining(_encryptedInput) > 0L && !_underflown);
+                    fillable = (_decryptedInput != null && remainingForRead(_decryptedInput) > 0L) || (_encryptedInput != null && remainingForRead(_encryptedInput) > 0L && !_underflown);
 
                     HandshakeStatus status = _sslEngine.getHandshakeStatus();
                     switch (status)
@@ -985,7 +985,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                             {
                                 interest = true;
                                 _fillState = FillState.INTERESTED;
-                                if (_flushState == FlushState.IDLE && (_encryptedOutput != null && remaining(_encryptedOutput) > 0L))
+                                if (_flushState == FlushState.IDLE && (_encryptedOutput != null && remainingForRead(_encryptedOutput) > 0L))
                                 {
                                     _flushState = FlushState.WRITING;
                                     write = _encryptedOutput;
@@ -1000,7 +1000,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                                 if (_flushState == FlushState.IDLE)
                                 {
                                     _flushState = FlushState.WRITING;
-                                    write = (_encryptedOutput != null && remaining(_encryptedOutput) > 0L) ? _encryptedOutput : WritableBuffer.EMPTY;
+                                    write = (_encryptedOutput != null && remainingForRead(_encryptedOutput) > 0L) ? _encryptedOutput : WritableBuffer.EMPTY;
                                 }
                             }
                             break;
@@ -1131,7 +1131,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                         // finish of any previous flushes
                         if (_encryptedOutput != null)
                         {
-                            int remaining = remaining(_encryptedOutput);
+                            int remaining = remainingForRead(_encryptedOutput);
                             if (remaining > 0)
                             {
                                 ReadableBuffer rb = _encryptedOutput.toReadable();
@@ -1228,7 +1228,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
 
                             // if we have net bytes, let's try to flush them
                             boolean flushed = true;
-                            int remaining = remaining(encryptedOutputBuffer);
+                            int remaining = remainingForRead(encryptedOutputBuffer);
                             if (remaining > 0)
                             {
                                 ReadableBuffer rb = encryptedOutputBuffer.toReadable();
@@ -1288,7 +1288,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                                     if (isRenegotiating() && !allowRenegotiate())
                                     {
                                         getEndPoint().shutdownOutput();
-                                        if (isEmpty && (_encryptedOutput == null || remaining(_encryptedOutput) == 0L))
+                                        if (isEmpty && (_encryptedOutput == null || remainingForRead(_encryptedOutput) == 0L))
                                             return result = true;
                                         throw new IOException("Broken pipe");
                                     }
@@ -1357,13 +1357,13 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                             case NEED_WRAP:
                             case NOT_HANDSHAKING:
                                 // write what we have or an empty buffer to reschedule a call to flush
-                                write = (_encryptedOutput != null && remaining(_encryptedOutput) > 0L) ? _encryptedOutput : WritableBuffer.EMPTY;
+                                write = (_encryptedOutput != null && remainingForRead(_encryptedOutput) > 0L) ? _encryptedOutput : WritableBuffer.EMPTY;
                                 _flushState = FlushState.WRITING;
                                 break;
 
                             case NEED_UNWRAP:
                                 // If we have something to write, then write it and ignore the needed unwrap for now.
-                                if (_encryptedOutput != null && remaining(_encryptedOutput) > 0L)
+                                if (_encryptedOutput != null && remainingForRead(_encryptedOutput) > 0L)
                                 {
                                     write = _encryptedOutput;
                                     _flushState = FlushState.WRITING;
@@ -1479,7 +1479,7 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                         WritableBuffer write = null;
                         try (AutoLock ignored = _lock.lock())
                         {
-                            if (_encryptedOutput != null && remaining(_encryptedOutput) > 0L)
+                            if (_encryptedOutput != null && remainingForRead(_encryptedOutput) > 0L)
                             {
                                 write = _encryptedOutput;
                                 _flushState = FlushState.WRITING;
@@ -1589,8 +1589,8 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
             try (AutoLock ignored = _lock.lock())
             {
                 inputsEmpty =
-                    (_encryptedInput == null || remaining(_encryptedInput) == 0L) &&
-                        (_decryptedInput == null || remaining(_decryptedInput) == 0L);
+                    (_encryptedInput == null || remainingForRead(_encryptedInput) == 0L) &&
+                        (_decryptedInput == null || remainingForRead(_decryptedInput) == 0L);
             }
             return inputsEmpty && (getEndPoint().isInputShutdown() || isInboundDone());
         }
@@ -1817,18 +1817,17 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
         }
     }
 
-    private static int remaining(WritableBuffer wb)
+    // TODO this looks like a useful helper that might become very common. Generalize?
+    //  Or create a WritableBuffer API to query ReadableBuffer remaining without flipping?
+    private static int remainingForRead(WritableBuffer wb)
     {
-        try
-        {
-            return (int)wb.availableForRead();
-        }
-        catch (IllegalStateException e)
-        {
-            return (int)wb.remaining();
-        }
+        ReadableBuffer rb = wb.toReadable();
+        long remaining = rb.remaining();
+        rb.toWritable();
+        return (int)remaining;
     }
 
+    // TODO this should be moved to a new ReadableBuffer.get(ByteBuffer) method
     private static int append(ByteBuffer to, ReadableBuffer from)
     {
         int pos = BufferUtil.flipToFill(to);

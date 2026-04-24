@@ -1827,7 +1827,8 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
         return (int)remaining;
     }
 
-    // TODO this should be moved to a new ReadableBuffer.get(ByteBuffer) method
+    // TODO this should be moved to a new ReadableBuffer.get(ByteBuffer) method,
+    //  but do we consider a mode for "ByteBuffer to"?
     private static int append(ByteBuffer to, ReadableBuffer from)
     {
         int pos = BufferUtil.flipToFill(to);

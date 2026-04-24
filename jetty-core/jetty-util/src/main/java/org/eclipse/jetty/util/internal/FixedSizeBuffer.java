@@ -141,6 +141,14 @@ public class FixedSizeBuffer implements WritableBuffer, ReadableBuffer
     // Writable
 
     @Override
+    public long availableForRead()
+    {
+        if (flushPosition == -1)
+            throw new IllegalStateException("Cannot query buffer in read mode");
+        return byteBuffer.position() - flushPosition;
+    }
+
+    @Override
     public void put(byte b)
     {
         if (flushPosition == -1)

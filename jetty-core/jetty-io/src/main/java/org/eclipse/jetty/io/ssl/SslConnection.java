@@ -1017,7 +1017,13 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                 {
                     ReadableBuffer rb = write.toReadable();
                     rb.writeTo(byteBufferToWrite ->
-                        getEndPoint().write(Callback.from(rb::toWritable, _incompleteWriteCallback), byteBufferToWrite));
+                        getEndPoint().write(Callback.from(() ->
+                        {
+                            try (AutoLock ignore = _lock.lock())
+                            {
+                                rb.toWritable();
+                            }
+                        }, _incompleteWriteCallback), byteBufferToWrite));
                 }
                 else if (fillable)
                     getExecutor().execute(_runFillable);
@@ -1417,7 +1423,13 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                 {
                     ReadableBuffer rb = write.toReadable();
                     rb.writeTo(byteBufferToWrite ->
-                        getEndPoint().write(Callback.from(rb::toWritable, _incompleteWriteCallback), byteBufferToWrite));
+                        getEndPoint().write(Callback.from(() ->
+                        {
+                            try (AutoLock ignore = _lock.lock())
+                            {
+                                rb.toWritable();
+                            }
+                        }, _incompleteWriteCallback), byteBufferToWrite));
                 }
                 else if (fillInterest)
                     ensureFillInterested();
@@ -1491,9 +1503,9 @@ public class SslConnection extends AbstractConnection implements Connection.Upgr
                             rb.writeTo(byteBufferToWrite ->
                                 endPoint.write(Callback.from(() ->
                                 {
-                                    rb.toWritable();
                                     try (AutoLock ignored = _lock.lock())
                                     {
+                                        rb.toWritable();
                                         _flushState = FlushState.IDLE;
                                         lockedReleaseEmptyEncryptedOutputBuffer();
                                     }

@@ -31,6 +31,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class FixedSizeBufferTest
 {
     @Test
+    public void testToReadableAfterRewindingPositionInWriteBuffer()
+    {
+        WritableBuffer wb = WritableBuffer.allocate(10, false);
+        wb.putInt(1);
+        ReadableBuffer rb = wb.toReadable();
+        assertEquals(1, rb.getInt());
+        rb.toWritable();
+        wb.position(2); // rewind write position
+        wb.toReadable();
+        assertEquals(2, rb.position());
+        assertEquals(0, rb.remaining());
+    }
+
+    @Test
     public void testReadableBufferPositionAndUnderflow()
     {
         ReadableBuffer rb = ReadableBuffer.wrap(ByteBuffer.allocate(10)

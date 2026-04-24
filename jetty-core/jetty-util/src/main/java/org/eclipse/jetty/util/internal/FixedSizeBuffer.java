@@ -208,7 +208,7 @@ public class FixedSizeBuffer implements WritableBuffer, ReadableBuffer
         if (flushPosition == -1)
             throw new IllegalStateException("Buffer already in read mode");
         byteBuffer.limit(byteBuffer.position());
-        byteBuffer.position(flushPosition);
+        byteBuffer.position(Math.min(flushPosition, byteBuffer.position()));
         flushPosition = -1;
         return this;
     }

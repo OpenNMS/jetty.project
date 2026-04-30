@@ -41,8 +41,8 @@ jobs:
               <servers>
                 <server>
                   <id>opennms-repo</id>
-                  <username>${env.OPENNMS_REPO_USERNAME}</username>
-                  <password>${env.OPENNMS_REPO_PASSWORD}</password>
+                  <username>${env.OPENNMS_JETTY_INTERNAL_REPO_USERNAME}</username>
+                  <password>${env.OPENNMS_JETTY_INTERNAL_REPO_PASSWORD}</password>
                 </server>
               </servers>
             </settings>
@@ -103,6 +103,8 @@ workflows:
   release-on-tag:
     jobs:
       - release:
+          context: 
+            - OpenNMS-Maven-Jira-Internal-repo
           filters:
             tags:
               only: /^\d+\.\d+\.\d+\.onms\d+$/

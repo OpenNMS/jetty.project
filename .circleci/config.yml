@@ -36,7 +36,7 @@ jobs:
           name: Configure Maven credentials
           command: |
             mkdir -p ~/.m2
-            cat > ~/.m2/settings.xml <<'EOF'
+            cat > ~/.m2/settings.xml \<<'EOF'
             <settings>
               <servers>
                 <server>
@@ -56,7 +56,7 @@ jobs:
       - run:
           name: Update distributionManagement in pom.xml
           command: |
-            python3 - <<'PYEOF'
+            python3 - \<<'PYEOF'
             import re
 
             with open('pom.xml', 'r') as f:

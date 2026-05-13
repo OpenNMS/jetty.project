@@ -98,7 +98,7 @@ workflows:
             branches:
               only:
                 - onms/jetty-9.4.x
-                - jira/NMS-*
+                - /jira\/NMS-.*/
             tags:
               ignore: /.*/
 

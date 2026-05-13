@@ -96,7 +96,9 @@ workflows:
       - build:
           filters:
             branches:
-              only: onms/jetty-9.4.x
+              only:
+                - onms/jetty-9.4.x
+                - jira/NMS-*
             tags:
               ignore: /.*/
 

@@ -43,6 +43,7 @@ public class HttpTokens
         HTAB,    // Horizontal tab 
         LF,      // Line feed
         CR,      // Carriage return
+        EOL,     // A CRLF or LF (depending on configuration)
         SPACE,   // Space 
         COLON,   // Colon character
         DIGIT,   // Digit
@@ -118,6 +119,8 @@ public class HttpTokens
         }
     }
 
+    public static final Token EOL_LF = new Token(LINE_FEED, Type.EOL);
+    public static final Token EOL_CRLF = new Token(LINE_FEED, Type.EOL);
     public static final Token[] TOKENS = new Token[256];
 
     static

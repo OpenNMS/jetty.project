@@ -169,6 +169,40 @@ public enum HttpMethod
     /**
      * Optimized lookup to find a method name and trailing space in a byte array.
      *
+     * @param buffer buffer containing ISO-8859-1 characters, it is not modified, which must have at least 5 bytes remaining
+     * @param lookAhead The integer representation of the first 4 bytes of the buffer that has previously been fetched
+     *                  with the equivalent of {@code buffer.getInt(buffer.position())}
+     * @return An HttpMethod if a match or null if no easy match.
+     */
+    static HttpMethod lookAheadGet(ByteBuffer buffer, int lookAhead)
+    {
+        switch (lookAhead)
+        {
+            case ACL_AS_INT:
+                return ACL;
+            case GET_AS_INT:
+                return GET;
+            case PRI_AS_INT:
+                return PRI;
+            case PUT_AS_INT:
+                return PUT;
+            case POST_AS_INT:
+                if (buffer.get(buffer.position() + 4) == ' ')
+                    return POST;
+                break;
+            case HEAD_AS_INT:
+                if (buffer.get(buffer.position() + 4) == ' ')
+                    return HEAD;
+                break;
+            default:
+                break;
+        }
+        return LOOK_AHEAD.getBest(buffer, 0, buffer.remaining());
+    }
+
+    /**
+     * Optimized lookup to find a method name and trailing space in a byte array.
+     *
      * @param bytes Array containing ISO-8859-1 characters
      * @param position The first valid index
      * @param limit The first non valid index

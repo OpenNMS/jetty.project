@@ -50,9 +50,18 @@ jobs:
       - run:
           name: Set version from tag
           command: |
+
             mvn --batch-mode versions:set \
               -DnewVersion="${CIRCLE_TAG}" \
               -DgenerateBackupPoms=false
+              
+            # replace the version in build-resources/pom.xml with the tag version, e.g.
+            mvn --batch-mode versions:set \
+              -DnewVersion="${CIRCLE_TAG}" \
+              -DgenerateBackupPoms=false \
+              -f build-resources/pom.xml
+
+            
       - run:
           name: Update distributionManagement in pom.xml
           command: |

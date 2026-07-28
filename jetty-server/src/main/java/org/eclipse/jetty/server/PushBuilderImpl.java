@@ -226,6 +226,9 @@ public class PushBuilderImpl implements PushBuilder
         }
 
         HttpURI uri = HttpURI.createHttpURI(_request.getScheme(), _request.getServerName(), _request.getServerPort(), path, param, query, null);
+        // The Host header was copied from the original request, but the authority of the pushed
+        // request is derived from the (possibly customized) request, so keep the two consistent.
+        _fields.put(HttpHeader.HOST, uri.getAuthority());
         MetaData.Request push = new MetaData.Request(_method, uri, _request.getHttpVersion(), _fields);
 
         if (LOG.isDebugEnabled())

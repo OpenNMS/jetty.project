@@ -28,6 +28,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.jetty.http.HttpCompliance;
 import org.eclipse.jetty.http.HttpTester;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -71,8 +72,13 @@ public class ForwardedRequestCustomizerTest
     {
         server = new Server();
 
+        // Many of the test cases below deliberately send an absolute request URI whose authority
+        // differs from the Host header, so use a compliance mode that allows a mismatched authority.
+        HttpCompliance mismatchedAuthorityCompliance = HttpCompliance.RFC2616;
+
         // Default behavior Connector
         HttpConnectionFactory http = new HttpConnectionFactory();
+        http.setHttpCompliance(mismatchedAuthorityCompliance);
         http.getHttpConfiguration().setSecurePort(443);
         customizer = new ForwardedRequestCustomizer();
         http.getHttpConfiguration().addCustomizer(customizer);
@@ -81,6 +87,7 @@ public class ForwardedRequestCustomizerTest
 
         // Alternate behavior Connector
         HttpConnectionFactory httpAlt = new HttpConnectionFactory();
+        httpAlt.setHttpCompliance(mismatchedAuthorityCompliance);
         httpAlt.getHttpConfiguration().setSecurePort(8443);
         customizerAlt = new ForwardedRequestCustomizer();
         httpAlt.getHttpConfiguration().addCustomizer(customizerAlt);
@@ -89,6 +96,7 @@ public class ForwardedRequestCustomizerTest
 
         // Configured behavior Connector
         http = new HttpConnectionFactory();
+        http.setHttpCompliance(mismatchedAuthorityCompliance);
         customizerConfigured = new ForwardedRequestCustomizer();
         customizerConfigured.setForwardedHeader("Jetty-Forwarded");
         customizerConfigured.setForwardedHostHeader("Jetty-Forwarded-Host");

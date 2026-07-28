@@ -20,6 +20,9 @@
               <Item>
                 <New class="org.eclipse.jetty.server.HttpConnectionFactory">
                   <Arg name="config"><Ref refid="sslHttpConfig"/></Arg>
+                  <!-- RFC2616 section 5.2 gives precedence to the authority of an absolute request URI
+                       over the Host header, so allow the two to differ. -->
+                  <Arg name="compliance"><Get class="org.eclipse.jetty.http.HttpCompliance" name="RFC2616"/></Arg>
                 </New>
               </Item>
             </Array>

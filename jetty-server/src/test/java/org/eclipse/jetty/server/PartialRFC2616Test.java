@@ -23,6 +23,7 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.jetty.http.HttpCompliance;
 import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpParser;
 import org.eclipse.jetty.server.LocalConnector.LocalEndPoint;
@@ -51,7 +52,11 @@ public class PartialRFC2616Test
     public void init() throws Exception
     {
         server = new Server();
-        connector = new LocalConnector(server);
+        HttpConnectionFactory http = new HttpConnectionFactory();
+        // RFC2616 section 5.2 gives precedence to the authority of an absolute request URI over the
+        // Host header, so use the RFC2616 compliance mode which allows a mismatch between the two.
+        http.setHttpCompliance(HttpCompliance.RFC2616);
+        connector = new LocalConnector(server, http);
         connector.setIdleTimeout(10000);
         server.addConnector(connector);
 

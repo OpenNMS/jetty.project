@@ -976,10 +976,19 @@ public class RequestTest
         assertEquals("myhost", results.get(i++));
         assertEquals("8888", results.get(i++));
 
+        // An absolute request URI whose authority does not match the Host header is rejected.
         results.clear();
         response = _connector.getResponse(
             "GET http://myhost:8888/ HTTP/1.1\n" +
                 "Host: wrong:666\n" +
+                "Connection: close\n" +
+                "\n");
+        assertThat(response, containsString("400 Mismatched Authority"));
+
+        results.clear();
+        response = _connector.getResponse(
+            "GET http://myhost:8888/ HTTP/1.1\n" +
+                "Host: myhost:8888\n" +
                 "Connection: close\n" +
                 "\n");
         i = 0;

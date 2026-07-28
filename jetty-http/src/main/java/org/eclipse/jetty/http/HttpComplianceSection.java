@@ -38,7 +38,13 @@ public enum HttpComplianceSection
     NO_UTF16_ENCODINGS("https://www.w3.org/International/iri-edit/draft-duerst-iri.html#anchor29", "UTF16 encoding"),
     NO_USER_INFO("https://datatracker.ietf.org/doc/html/rfc9110#name-deprecation-of-userinfo-in-", "User info in authority"),
     NO_AMBIGUOUS_EMPTY_SEGMENT("https://tools.ietf.org/html/rfc3986#section-3.3", "Ambiguous URI empty segment"),
-    NO_AMBIGUOUS_PATH_ENCODING("https://tools.ietf.org/html/rfc3986#section-3.3", "Ambiguous URI path encoding");
+    NO_AMBIGUOUS_PATH_ENCODING("https://tools.ietf.org/html/rfc3986#section-3.3", "Ambiguous URI path encoding"),
+    /**
+     * The authority of the request target (either an absolute request URI in HTTP/1.x or the
+     * {@code :authority} pseudo header in HTTP/2) must not differ from the {@code Host} header,
+     * otherwise a single request carries two conflicting host identities.
+     */
+    MISMATCHED_AUTHORITY("https://www.rfc-editor.org/rfc/rfc7230#section-5.4", "Mismatched Authority");
 
     final String url;
     final String description;

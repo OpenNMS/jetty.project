@@ -19,7 +19,7 @@
 package org.eclipse.jetty.security.authentication;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -48,6 +48,8 @@ import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.log.Logger;
 import org.eclipse.jetty.util.security.Constraint;
 import org.eclipse.jetty.util.security.Credential;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * The nonce max age in ms can be set with the {@link SecurityHandler#setInitParameter(String, String)}
@@ -129,6 +131,10 @@ public class DigestAuthenticator extends LoginAuthenticator
                 if (LOG.isDebugEnabled())
                     LOG.debug("Credentials: " + credentials);
                 QuotedStringTokenizer tokenizer = new QuotedStringTokenizer(credentials, "=, ", true, false);
+                // Only the double quote is special in a HTTP field value; the single quote
+                // is a literal character and must be preserved, for example in the
+                // RFC 5987 encoded username* parameter, whose value is charset'lang'chars.
+                tokenizer.setSingle(false);
                 final Digest digest = new Digest(request.getMethod());
                 String last = null;
                 String name = null;
@@ -156,6 +162,8 @@ public class DigestAuthenticator extends LoginAuthenticator
                             {
                                 if ("username".equalsIgnoreCase(name))
                                     digest.username = tok;
+                                else if ("username*".equalsIgnoreCase(name))
+                                    digest.usernameStar = tok;
                                 else if ("realm".equalsIgnoreCase(name))
                                     digest.realm = tok;
                                 else if ("nonce".equalsIgnoreCase(name))
@@ -175,19 +183,22 @@ public class DigestAuthenticator extends LoginAuthenticator
                     }
                 }
 
-                int n = checkNonce(digest, baseRequest);
-
-                if (n > 0)
+                if (resolveUserName(digest))
                 {
-                    //UserIdentity user = _loginService.login(digest.username,digest);
-                    UserIdentity user = login(digest.username, digest, req);
-                    if (user != null)
+                    int n = checkNonce(digest, baseRequest);
+
+                    if (n > 0)
                     {
-                        return new UserAuthentication(getAuthMethod(), user);
+                        //UserIdentity user = _loginService.login(digest.username,digest);
+                        UserIdentity user = login(digest.username, digest, req);
+                        if (user != null)
+                        {
+                            return new UserAuthentication(getAuthMethod(), user);
+                        }
                     }
+                    else if (n == 0)
+                        stale = true;
                 }
-                else if (n == 0)
-                    stale = true;
             }
 
             if (!DeferredAuthentication.isDeferred(response))
@@ -200,6 +211,7 @@ public class DigestAuthenticator extends LoginAuthenticator
                     "\", nonce=\"" + newNonce(baseRequest) +
                     "\", algorithm=MD5" +
                     ", qop=\"auth\"" +
+                    ", charset=UTF-8" +
                     ", stale=" + stale);
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 
@@ -211,6 +223,60 @@ public class DigestAuthenticator extends LoginAuthenticator
         catch (IOException e)
         {
             throw new ServerAuthException(e);
+        }
+    }
+
+    /**
+     * <p>Resolves the effective username of the given digest, which may have been sent
+     * either as the {@code username} parameter or, for usernames that are not valid in
+     * a {@code quoted-string}, as the RFC 5987 encoded {@code username*} parameter.</p>
+     * <p>On success, {@link Digest#username} holds the plain username, which is what
+     * both {@code H(A1)} and the {@link org.eclipse.jetty.security.LoginService} use.</p>
+     *
+     * @param digest the digest data whose username must be resolved
+     * @return whether the username could be resolved
+     */
+    private boolean resolveUserName(Digest digest)
+    {
+        if (digest.usernameStar == null)
+            return true;
+
+        // RFC 7616[3.4]: username and username* are mutually exclusive.
+        if (!digest.username.isEmpty())
+            return false;
+
+        String username = resolveEncodedUserName(digest.usernameStar);
+        if (username == null)
+            return false;
+
+        digest.username = username;
+        return true;
+    }
+
+    /**
+     * <p>Resolves the encoded username received in the {@code Authorization} header.</p>
+     * <p>The username is encoded with RFC 5987 and this method decodes it.</p>
+     * <p>This method only decodes RFC 5987 usernames encoded with UTF-8 and no
+     * language; for example {@code UTF-8''caf%C3%A9} is decoded as {@code cafe}
+     * with an acute accent on the last character.</p>
+     *
+     * @param encodedUserName the encoded username
+     * @return the decoded username, or {@code null} if it could not be decoded
+     */
+    protected String resolveEncodedUserName(String encodedUserName)
+    {
+        try
+        {
+            String encodedPrefix = "UTF-8''";
+            if (!encodedUserName.regionMatches(true, 0, encodedPrefix, 0, encodedPrefix.length()))
+                return null;
+            return URI.create("scheme:" + encodedUserName.substring(encodedPrefix.length())).getSchemeSpecificPart();
+        }
+        catch (Throwable x)
+        {
+            // Likely a badly encoded username.
+            LOG.ignore(x);
+            return null;
         }
     }
 
@@ -311,6 +377,7 @@ public class DigestAuthenticator extends LoginAuthenticator
         private static final long serialVersionUID = -2484639019549527724L;
         final String method;
         String username = "";
+        String usernameStar;
         String realm = "";
         String nonce = "";
         String nc = "";
@@ -345,18 +412,25 @@ public class DigestAuthenticator extends LoginAuthenticator
                 else
                 {
                     // calc A1 digest
-                    md.update(username.getBytes(StandardCharsets.ISO_8859_1));
+                    // RFC 7616[4]: hashing must be done with the charset advertised in
+                    // the WWW-Authenticate header, which is UTF-8. ISO-8859-1 must not be
+                    // used here: it silently maps every character above U+00FF to '?',
+                    // so that a two character password made of characters above U+00FF
+                    // and the password "??" produce the same H(A1), letting an attacker
+                    // that knows the username authenticate with a colliding password.
+                    // See GHSA-2fvj-hgj9-j2gr.
+                    md.update(username.getBytes(UTF_8));
                     md.update((byte)':');
-                    md.update(realm.getBytes(StandardCharsets.ISO_8859_1));
+                    md.update(realm.getBytes(UTF_8));
                     md.update((byte)':');
-                    md.update(password.getBytes(StandardCharsets.ISO_8859_1));
+                    md.update(password.getBytes(UTF_8));
                     ha1 = md.digest();
                 }
                 // calc A2 digest
                 md.reset();
-                md.update(method.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(method.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(uri.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(uri.getBytes(UTF_8));
                 byte[] ha2 = md.digest();
 
                 // calc digest
@@ -366,17 +440,17 @@ public class DigestAuthenticator extends LoginAuthenticator
                 // request-digest = <"> < KD ( H(A1), unq(nonce-value) ":" H(A2)
                 // ) > <">
 
-                md.update(TypeUtil.toString(ha1, 16).getBytes(StandardCharsets.ISO_8859_1));
+                md.update(TypeUtil.toString(ha1, 16).getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(nonce.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(nonce.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(nc.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(nc.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(cnonce.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(cnonce.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(qop.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(qop.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(TypeUtil.toString(ha2, 16).getBytes(StandardCharsets.ISO_8859_1));
+                md.update(TypeUtil.toString(ha2, 16).getBytes(UTF_8));
                 byte[] digest = md.digest();
 
                 // check digest

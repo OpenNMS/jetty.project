@@ -19,6 +19,7 @@
 package org.eclipse.jetty.security;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -74,6 +75,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
@@ -90,6 +92,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ConstraintTest
 {
     private static final String TEST_REALM = "TestRealm";
+    private static final String PASSWORD_UTF8 = "密码"; // Chinese for "password", not representable in ISO-8859-1.
+    private static final String USERNAME_UTF8 = "用户"; // Chinese for "user", not representable in ISO-8859-1.
     private Server _server;
     private LocalConnector _connector;
     private ConstraintSecurityHandler _security;
@@ -121,6 +125,8 @@ public class ConstraintTest
         loginService.putUser("user2", new Password("password"), new String[]{"user"});
         loginService.putUser("admin", new Password("password"), new String[]{"user", "administrator"});
         loginService.putUser("user3", new Password("password"), new String[]{"foo"});
+        loginService.putUser("utf8user", new Password(PASSWORD_UTF8), new String[]{"user"});
+        loginService.putUser(USERNAME_UTF8, new Password("password"), new String[]{"user"});
 
         contextHandler.setContextPath("/ctx");
         _server.setHandler(contextHandler);
@@ -780,20 +786,31 @@ public class ConstraintTest
 
     private String digest(String nonce, String username, String password, String uri, String nc) throws Exception
     {
+        // RFC 7616 clients hash with the charset advertised by the server, which is UTF-8.
+        return digest(UTF_8, nonce, username, password, uri, nc);
+    }
+
+    /**
+     * Computes the digest {@code response} parameter with an explicit {@link Charset},
+     * so that tests can simulate both RFC 7616 clients (UTF-8) and legacy RFC 2617
+     * clients (ISO-8859-1).
+     */
+    private String digest(Charset charset, String nonce, String username, String password, String uri, String nc) throws Exception
+    {
         MessageDigest md = MessageDigest.getInstance("MD5");
         byte[] ha1;
         // calc A1 digest
-        md.update(username.getBytes(ISO_8859_1));
+        md.update(username.getBytes(charset));
         md.update((byte)':');
-        md.update("TestRealm".getBytes(ISO_8859_1));
+        md.update("TestRealm".getBytes(charset));
         md.update((byte)':');
-        md.update(password.getBytes(ISO_8859_1));
+        md.update(password.getBytes(charset));
         ha1 = md.digest();
         // calc A2 digest
         md.reset();
-        md.update("GET".getBytes(ISO_8859_1));
+        md.update("GET".getBytes(charset));
         md.update((byte)':');
-        md.update(uri.getBytes(ISO_8859_1));
+        md.update(uri.getBytes(charset));
         byte[] ha2 = md.digest();
 
         // calc digest
@@ -803,21 +820,45 @@ public class ConstraintTest
         // request-digest = <"> < KD ( H(A1), unq(nonce-value) ":" H(A2)
         // ) > <">
 
-        md.update(TypeUtil.toString(ha1, 16).getBytes(ISO_8859_1));
+        md.update(TypeUtil.toString(ha1, 16).getBytes(charset));
         md.update((byte)':');
-        md.update(nonce.getBytes(ISO_8859_1));
+        md.update(nonce.getBytes(charset));
         md.update((byte)':');
-        md.update(nc.getBytes(ISO_8859_1));
+        md.update(nc.getBytes(charset));
         md.update((byte)':');
-        md.update(CNONCE.getBytes(ISO_8859_1));
+        md.update(CNONCE.getBytes(charset));
         md.update((byte)':');
-        md.update("auth".getBytes(ISO_8859_1));
+        md.update("auth".getBytes(charset));
         md.update((byte)':');
-        md.update(TypeUtil.toString(ha2, 16).getBytes(ISO_8859_1));
+        md.update(TypeUtil.toString(ha2, 16).getBytes(charset));
         byte[] digest = md.digest();
 
         // check digest
         return TypeUtil.toString(digest, 16);
+    }
+
+    private String startDigestAndGetNonce() throws Exception
+    {
+        DigestAuthenticator authenticator = new DigestAuthenticator();
+        authenticator.setMaxNonceCount(5);
+        _security.setAuthenticator(authenticator);
+        _server.start();
+
+        String response = _connector.getResponse("GET /ctx/auth/info HTTP/1.0\r\n\r\n");
+        assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
+        // RFC 7616[3.3]: the server must tell the client which charset to hash with.
+        assertThat(response, containsString("charset=UTF-8"));
+
+        Matcher matcher = Pattern.compile("nonce=\"([^\"]*)\",").matcher(response);
+        assertTrue(matcher.find());
+        return matcher.group(1);
+    }
+
+    private String digestRequest(String authorization) throws Exception
+    {
+        return _connector.getResponse("GET /ctx/auth/info HTTP/1.0\r\n" +
+            "Authorization: " + authorization + "\r\n" +
+            "\r\n");
     }
 
     @Test
@@ -903,6 +944,70 @@ public class ConstraintTest
             "\r\n");
         assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
         assertThat(response, containsString("stale=true"));
+    }
+
+    /**
+     * Regression test for GHSA-2fvj-hgj9-j2gr (CVE-2026-10050): hashing the digest
+     * parameters with ISO-8859-1 silently replaces every character above U+00FF with
+     * {@code '?'}, so an attacker that knows the username of a user whose password
+     * contains such characters can authenticate with a colliding password made of
+     * {@code '?'} characters.
+     */
+    @Test
+    public void testDigestNonLatin1PasswordCollisionIsRejected() throws Exception
+    {
+        String nonce = startDigestAndGetNonce();
+
+        // The colliding password produces exactly the same digest as the real
+        // password when the parameters are hashed with the lossy ISO-8859-1.
+        String collidingResponse = digest(ISO_8859_1, nonce, "utf8user", "??", "/ctx/auth/info", "1");
+        assertThat(collidingResponse, is(digest(ISO_8859_1, nonce, "utf8user", PASSWORD_UTF8, "/ctx/auth/info", "1")));
+
+        String response = digestRequest("Digest username=\"utf8user\", qop=auth, cnonce=\"" + CNONCE + "\", " +
+            "uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=1, nonce=\"" + nonce + "\", " +
+            "response=\"" + collidingResponse + "\"");
+        assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
+
+        // The real password, hashed with ISO-8859-1 as a vulnerable client would,
+        // must not authenticate either.
+        response = digestRequest("Digest username=\"utf8user\", qop=auth, cnonce=\"" + CNONCE + "\", " +
+            "uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=2, nonce=\"" + nonce + "\", " +
+            "response=\"" + digest(ISO_8859_1, nonce, "utf8user", PASSWORD_UTF8, "/ctx/auth/info", "2") + "\"");
+        assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
+
+        // The real password, hashed with UTF-8 as the challenge asked for, authenticates.
+        response = digestRequest("Digest username=\"utf8user\", qop=auth, cnonce=\"" + CNONCE + "\", " +
+            "uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=3, nonce=\"" + nonce + "\", " +
+            "response=\"" + digest(UTF_8, nonce, "utf8user", PASSWORD_UTF8, "/ctx/auth/info", "3") + "\"");
+        assertThat(response, startsWith("HTTP/1.1 200 OK"));
+    }
+
+    /**
+     * A username that cannot be carried in a {@code quoted-string} is sent RFC 5987
+     * encoded in the {@code username*} parameter, and must be decoded before both the
+     * {@code H(A1)} computation and the login service lookup.
+     */
+    @Test
+    public void testDigestNonLatin1UserName() throws Exception
+    {
+        String nonce = startDigestAndGetNonce();
+
+        String response = digestRequest("Digest username*=UTF-8''%E7%94%A8%E6%88%B7, qop=auth, cnonce=\"" + CNONCE + "\", " +
+            "uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=1, nonce=\"" + nonce + "\", " +
+            "response=\"" + digest(UTF_8, nonce, USERNAME_UTF8, "password", "/ctx/auth/info", "1") + "\"");
+        assertThat(response, startsWith("HTTP/1.1 200 OK"));
+
+        // RFC 7616[3.4]: username and username* are mutually exclusive.
+        response = digestRequest("Digest username=\"utf8user\", username*=UTF-8''%E7%94%A8%E6%88%B7, " +
+            "qop=auth, cnonce=\"" + CNONCE + "\", uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=2, nonce=\"" + nonce + "\", " +
+            "response=\"" + digest(UTF_8, nonce, USERNAME_UTF8, "password", "/ctx/auth/info", "2") + "\"");
+        assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
+
+        // A username* that is not UTF-8 encoded is rejected.
+        response = digestRequest("Digest username*=ISO-8859-1''%E7%94%A8%E6%88%B7, qop=auth, cnonce=\"" + CNONCE + "\", " +
+            "uri=\"/ctx/auth/info\", realm=\"TestRealm\", nc=3, nonce=\"" + nonce + "\", " +
+            "response=\"" + digest(UTF_8, nonce, USERNAME_UTF8, "password", "/ctx/auth/info", "3") + "\"");
+        assertThat(response, startsWith("HTTP/1.1 401 Unauthorized"));
     }
 
     @Test

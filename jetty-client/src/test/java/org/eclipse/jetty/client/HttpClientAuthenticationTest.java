@@ -28,6 +28,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -72,9 +73,11 @@ import org.junit.jupiter.params.provider.ArgumentsSource;
 import static org.eclipse.jetty.client.api.Authentication.ANY_REALM;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalToIgnoringCase;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class HttpClientAuthenticationTest extends AbstractHttpClientServerTest
@@ -177,6 +180,82 @@ public class HttpClientAuthenticationTest extends AbstractHttpClientServerTest
         startDigest(scenario, new EmptyServerHandler());
         URI uri = URI.create(scenario.getScheme() + "://localhost:" + connector.getLocalPort());
         testAuthentication(scenario, new DigestAuthentication(uri, ANY_REALM, "digest", "digest"));
+    }
+
+    /**
+     * A password that cannot be represented in ISO-8859-1 must be hashed with the
+     * charset the server advertises (UTF-8), see GHSA-2fvj-hgj9-j2gr.
+     */
+    @ParameterizedTest
+    @ArgumentsSource(ScenarioProvider.class)
+    public void testDigestWithNonLatin1Password(Scenario scenario) throws Exception
+    {
+        startDigest(scenario, new EmptyServerHandler());
+        URI uri = URI.create(scenario.getScheme() + "://localhost:" + connector.getLocalPort());
+        // @checkstyle-disable-check : AvoidEscapedUnicodeCharactersCheck
+        testAuthentication(scenario, new DigestAuthentication(uri, realm, "digest_utf8", "\u5BC6\u7801"));
+    }
+
+    /**
+     * A user name that cannot be carried in a {@code quoted-string} must be sent
+     * RFC 5987 encoded in the {@code username*} parameter.
+     */
+    @ParameterizedTest
+    @ArgumentsSource(ScenarioProvider.class)
+    public void testDigestWithNonLatin1UserName(Scenario scenario) throws Exception
+    {
+        startDigest(scenario, new EmptyServerHandler());
+        URI uri = URI.create(scenario.getScheme() + "://localhost:" + connector.getLocalPort());
+        // @checkstyle-disable-check : AvoidEscapedUnicodeCharactersCheck
+        testAuthentication(scenario, new DigestAuthentication(uri, realm, "\u7528\u6237", "digest"));
+    }
+
+    /**
+     * A server that does not advertise a charset implies the lossy ISO-8859-1, in which
+     * a password above U+00FF cannot be represented; rather than silently hashing a
+     * {@code '?'} for every such character - which produces a digest that collides with
+     * the digest of a password made of literal {@code '?'} characters - the client must
+     * fail the request, see GHSA-2fvj-hgj9-j2gr.
+     */
+    @ParameterizedTest
+    @ArgumentsSource(ScenarioProvider.class)
+    public void testDigestNonLatin1PasswordWithoutCharsetFailsRatherThanColliding(Scenario scenario) throws Exception
+    {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        start(scenario, new EmptyServerHandler()
+        {
+            @Override
+            protected void service(String target, org.eclipse.jetty.server.Request jettyRequest, HttpServletRequest request, HttpServletResponse response) throws IOException
+            {
+                String credentials = request.getHeader(HttpHeader.AUTHORIZATION.asString());
+                if (credentials == null)
+                {
+                    // An RFC 2617 challenge, without the charset parameter.
+                    response.setHeader(HttpHeader.WWW_AUTHENTICATE.asString(),
+                        "Digest realm=\"" + realm + "\", nonce=\"1234567890\", algorithm=MD5, qop=\"auth\"");
+                    response.setStatus(HttpStatus.UNAUTHORIZED_401);
+                }
+                else
+                {
+                    authorization.set(credentials);
+                }
+            }
+        });
+
+        URI uri = URI.create(scenario.getScheme() + "://localhost:" + connector.getLocalPort());
+        // @checkstyle-disable-check : AvoidEscapedUnicodeCharactersCheck
+        client.getAuthenticationStore().addAuthentication(new DigestAuthentication(uri, realm, "digest_utf8", "\u5BC6\u7801"));
+
+        ExecutionException failure = assertThrows(ExecutionException.class, () ->
+            client.newRequest("localhost", connector.getLocalPort())
+                .scheme(scenario.getScheme())
+                .path("/secure")
+                .timeout(5, TimeUnit.SECONDS)
+                .send());
+        assertThat(failure.getCause(), instanceOf(IllegalArgumentException.class));
+
+        // The client must not have sent any Authorization header at all.
+        assertNull(authorization.get());
     }
 
     private void testAuthentication(Scenario scenario, Authentication authentication) throws Exception

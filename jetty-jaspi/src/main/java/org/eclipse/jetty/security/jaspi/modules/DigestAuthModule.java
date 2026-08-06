@@ -19,7 +19,7 @@
 package org.eclipse.jetty.security.jaspi.modules;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.Map;
@@ -40,6 +40,8 @@ import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.log.Logger;
 import org.eclipse.jetty.util.security.Constraint;
 import org.eclipse.jetty.util.security.Credential;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Deprecated
 public class DigestAuthModule extends BaseAuthModule
@@ -94,6 +96,10 @@ public class DigestAuthModule extends BaseAuthModule
                 if (LOG.isDebugEnabled())
                     LOG.debug("Credentials: " + credentials);
                 QuotedStringTokenizer tokenizer = new QuotedStringTokenizer(credentials, "=, ", true, false);
+                // Only the double quote is special in a HTTP field value; the single quote
+                // is a literal character and must be preserved, for example in the
+                // RFC 5987 encoded username* parameter, whose value is charset'lang'chars.
+                tokenizer.setSingle(false);
                 final Digest digest = new Digest(request.getMethod());
                 String last = null;
                 String name = null;
@@ -121,6 +127,8 @@ public class DigestAuthModule extends BaseAuthModule
                             {
                                 if ("username".equalsIgnoreCase(name))
                                     digest.username = tok;
+                                else if ("username*".equalsIgnoreCase(name))
+                                    digest.usernameStar = tok;
                                 else if ("realm".equalsIgnoreCase(name))
                                     digest.realm = tok;
                                 else if ("nonce".equalsIgnoreCase(name))
@@ -140,17 +148,20 @@ public class DigestAuthModule extends BaseAuthModule
                     }
                 }
 
-                int n = checkNonce(digest.nonce, timestamp);
-
-                if (n > 0)
+                if (resolveUserName(digest))
                 {
-                    if (login(clientSubject, digest.username, digest, Constraint.__DIGEST_AUTH, messageInfo))
+                    int n = checkNonce(digest.nonce, timestamp);
+
+                    if (n > 0)
                     {
-                        return AuthStatus.SUCCESS;
+                        if (login(clientSubject, digest.username, digest, Constraint.__DIGEST_AUTH, messageInfo))
+                        {
+                            return AuthStatus.SUCCESS;
+                        }
                     }
+                    else if (n == 0)
+                        stale = true;
                 }
-                else if (n == 0)
-                    stale = true;
             }
 
             if (!isMandatory(messageInfo))
@@ -163,7 +174,7 @@ public class DigestAuthModule extends BaseAuthModule
             response.setHeader(HttpHeader.WWW_AUTHENTICATE.asString(), "Digest realm=\"" + realmName +
                 "\", domain=\"" + domain +
                 "\", nonce=\"" + newNonce(timestamp) +
-                "\", algorithm=MD5, qop=\"auth\"" + (useStale ? (" stale=" + stale) : ""));
+                "\", algorithm=MD5, qop=\"auth\", charset=UTF-8" + (useStale ? (" stale=" + stale) : ""));
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return AuthStatus.SEND_CONTINUE;
         }
@@ -174,6 +185,39 @@ public class DigestAuthModule extends BaseAuthModule
         catch (UnsupportedCallbackException e)
         {
             throw new AuthException(e.getMessage());
+        }
+    }
+
+    /**
+     * <p>Resolves the effective username of the given digest, which may have been sent
+     * either as the {@code username} parameter or, for usernames that are not valid in
+     * a {@code quoted-string}, as the RFC 5987 encoded {@code username*} parameter.</p>
+     *
+     * @param digest the digest data whose username must be resolved
+     * @return whether the username could be resolved
+     */
+    private boolean resolveUserName(Digest digest)
+    {
+        if (digest.usernameStar == null)
+            return true;
+
+        // RFC 7616[3.4]: username and username* are mutually exclusive.
+        if (digest.username != null)
+            return false;
+
+        try
+        {
+            String encodedPrefix = "UTF-8''";
+            if (!digest.usernameStar.regionMatches(true, 0, encodedPrefix, 0, encodedPrefix.length()))
+                return false;
+            digest.username = URI.create("scheme:" + digest.usernameStar.substring(encodedPrefix.length())).getSchemeSpecificPart();
+            return digest.username != null;
+        }
+        catch (Throwable x)
+        {
+            // Likely a badly encoded username.
+            LOG.ignore(x);
+            return false;
         }
     }
 
@@ -279,6 +323,7 @@ public class DigestAuthModule extends BaseAuthModule
 
         String method = null;
         String username = null;
+        String usernameStar = null;
         String realm = null;
         String nonce = null;
         String nc = null;
@@ -311,18 +356,24 @@ public class DigestAuthModule extends BaseAuthModule
                 else
                 {
                     // calc A1 digest
-                    md.update(username.getBytes(StandardCharsets.ISO_8859_1));
+                    // RFC 7616[4]: hashing must be done with the charset advertised in
+                    // the WWW-Authenticate header, which is UTF-8. ISO-8859-1 must not be
+                    // used here: it silently maps every character above U+00FF to '?',
+                    // so that different passwords produce the same H(A1), letting an
+                    // attacker that knows the username authenticate with a colliding
+                    // password. See GHSA-2fvj-hgj9-j2gr.
+                    md.update(username.getBytes(UTF_8));
                     md.update((byte)':');
-                    md.update(realm.getBytes(StandardCharsets.ISO_8859_1));
+                    md.update(realm.getBytes(UTF_8));
                     md.update((byte)':');
-                    md.update(password.getBytes(StandardCharsets.ISO_8859_1));
+                    md.update(password.getBytes(UTF_8));
                     ha1 = md.digest();
                 }
                 // calc A2 digest
                 md.reset();
-                md.update(method.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(method.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(uri.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(uri.getBytes(UTF_8));
                 byte[] ha2 = md.digest();
 
                 // calc digest
@@ -332,17 +383,17 @@ public class DigestAuthModule extends BaseAuthModule
                 // request-digest = <"> < KD ( H(A1), unq(nonce-value) ":" H(A2)
                 // ) > <">
 
-                md.update(TypeUtil.toString(ha1, 16).getBytes(StandardCharsets.ISO_8859_1));
+                md.update(TypeUtil.toString(ha1, 16).getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(nonce.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(nonce.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(nc.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(nc.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(cnonce.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(cnonce.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(qop.getBytes(StandardCharsets.ISO_8859_1));
+                md.update(qop.getBytes(UTF_8));
                 md.update((byte)':');
-                md.update(TypeUtil.toString(ha2, 16).getBytes(StandardCharsets.ISO_8859_1));
+                md.update(TypeUtil.toString(ha2, 16).getBytes(UTF_8));
                 byte[] digest = md.digest();
 
                 // check digest

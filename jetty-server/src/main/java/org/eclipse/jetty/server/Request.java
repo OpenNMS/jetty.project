@@ -1824,11 +1824,12 @@ public class Request implements HttpServletRequest
      * <p>Check that the authority of the request target does not conflict with any {@code Host} header,
      * as required by <a href="https://www.rfc-editor.org/rfc/rfc7230#section-5.4">RFC 7230, section 5.4</a>
      * and <a href="https://www.rfc-editor.org/rfc/rfc9113#section-8.3.1">RFC 9113, section 8.3.1</a>.</p>
-     * <p>The request target carries an authority when an absolute URI is used in HTTP/1.x, or when the
-     * {@code :authority} pseudo header is used in HTTP/2.  Without this check the same request would
-     * carry two different host identities: one seen by code using {@link #getServerName()} and one seen
-     * by code using the {@code Host} header, which may be used to defeat host based security decisions
-     * such as virtual host isolation or host based access control.</p>
+     * <p>The request target carries an authority when an absolute URI or the authority form of a
+     * {@code CONNECT} request target is used in HTTP/1.x, or when the {@code :authority} pseudo header
+     * is used in HTTP/2.  Without this check the same request would carry two different host identities:
+     * one seen by code using {@link #getServerName()} and one seen by code using the {@code Host} header,
+     * which may be used to defeat host based security decisions such as virtual host isolation or host
+     * based access control.</p>
      *
      * @param request the Request metadata
      * @throws BadMessageException if the authority and the {@code Host} header are mismatched and the
@@ -1837,8 +1838,8 @@ public class Request implements HttpServletRequest
     private void checkAuthorityAndHost(org.eclipse.jetty.http.MetaData.Request request) throws BadMessageException
     {
         HttpURI uri = request.getURI();
-        // A CONNECT request target is an authority that is not the origin server, so it is not checked here.
-        if (uri.getAuthority() == null || HttpMethod.CONNECT.is(request.getMethod()))
+        // The origin form of a request target and the asterisk form carry no authority to check.
+        if (uri.getAuthority() == null)
             return;
 
         // Every Host header must match, so that a smuggled second Host header cannot be used either.
@@ -1871,11 +1872,14 @@ public class Request implements HttpServletRequest
         // The two may still be equivalent if only one of them states the default port of the scheme.
         try
         {
-            String scheme = uri.getScheme();
-            int defaultPort = HttpScheme.HTTPS.is(scheme) || HttpScheme.WSS.is(scheme) ? 443 : 80;
+            // A negative default port means that the default port of the scheme is unknown, for example
+            // because the authority form of a CONNECT request target carries no scheme at all.  An implied
+            // port can then never be shown to be equivalent to an explicitly stated one.
+            int defaultPort = URIUtil.getDefaultPortForScheme(uri.getScheme());
             HostPort hostPort = new HostPort(host);
             int uriPort = uri.getPort() > 0 ? uri.getPort() : defaultPort;
-            if (uriPort != hostPort.getPort(defaultPort))
+            int hostHeaderPort = hostPort.getPort() > 0 ? hostPort.getPort() : defaultPort;
+            if (uriPort != hostHeaderPort)
                 return false;
             return hostPort.getHost().equalsIgnoreCase(uri.getHost());
         }

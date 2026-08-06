@@ -211,6 +211,86 @@ public class MismatchedAuthorityTest
     }
 
     /**
+     * The default port that may be implied by the {@code Host} header is the default port of the
+     * scheme of the request URI, and not always the default port of HTTP.
+     */
+    @Test
+    public void testDefaultPortOfNonHttpSchemeIsUsed() throws Exception
+    {
+        start(null);
+
+        // The default port of ftp is 21, so these two authorities denote the same host.
+        HttpTester.Response response = request("GET ftp://myhost/path HTTP/1.1", "myhost:21");
+        assertThat(response.getStatus(), is(200));
+
+        // Port 80 is not the default port of ftp, so it may not be implied by the Host header.
+        response = request("GET ftp://myhost:80/path HTTP/1.1", "myhost");
+        assertThat(response.getStatus(), is(400));
+
+        response = request("GET ftp://myhost/path HTTP/1.1", "myhost:80");
+        assertThat(response.getStatus(), is(400));
+    }
+
+    /**
+     * The default port of an unknown scheme is unknown, so an implied port cannot be shown to be
+     * equivalent to an explicitly stated one.
+     */
+    @Test
+    public void testImpliedPortOfUnknownSchemeIsRejected() throws Exception
+    {
+        start(null);
+
+        HttpTester.Response response = request("GET foo://myhost:80/path HTTP/1.1", "myhost");
+        assertThat(response.getStatus(), is(400));
+
+        response = request("GET foo://myhost/path HTTP/1.1", "myhost:80");
+        assertThat(response.getStatus(), is(400));
+    }
+
+    /**
+     * The request target of a CONNECT request is an authority, which must be identical to the
+     * {@code Host} header as well, otherwise a proxy or tunnel and its handlers may disagree about
+     * which host the request is for.
+     */
+    @Test
+    public void testMatchingConnectAuthorityIsAccepted() throws Exception
+    {
+        start(null);
+        HttpTester.Response response = request("CONNECT myhost:9999 HTTP/1.1", "myhost:9999");
+        assertThat(response.getStatus(), is(200));
+        assertEquals("myhost", response.get("X-Server-Name"));
+        assertEquals("9999", response.get("X-Server-Port"));
+    }
+
+    @Test
+    public void testMismatchedConnectAuthorityIsRejected() throws Exception
+    {
+        start(null);
+        HttpTester.Response response = request("CONNECT myhost:9999 HTTP/1.1", "otherhost:9999");
+        assertThat(response.getStatus(), is(400));
+    }
+
+    @Test
+    public void testMismatchedConnectPortIsRejected() throws Exception
+    {
+        start(null);
+        HttpTester.Response response = request("CONNECT myhost:9999 HTTP/1.1", "myhost:8888");
+        assertThat(response.getStatus(), is(400));
+    }
+
+    /**
+     * The authority form of a CONNECT request target has no scheme, so there is no default port that
+     * the {@code Host} header may leave out.
+     */
+    @Test
+    public void testConnectAuthorityWithImpliedHostPortIsRejected() throws Exception
+    {
+        start(null);
+        HttpTester.Response response = request("CONNECT myhost:80 HTTP/1.1", "myhost");
+        assertThat(response.getStatus(), is(400));
+    }
+
+    /**
      * RFC2616 section 5.2 gives precedence to the authority of an absolute request URI, so the
      * RFC2616 compliance mode does not require the authority and the {@code Host} header to match.
      */
@@ -222,5 +302,15 @@ public class MismatchedAuthorityTest
         assertThat(response.getStatus(), is(200));
         assertEquals("myhost", response.get("X-Server-Name"));
         assertEquals("8888", response.get("X-Server-Port"));
+    }
+
+    @Test
+    public void testMismatchedConnectAuthorityIsAllowedByRFC2616() throws Exception
+    {
+        start(HttpCompliance.RFC2616);
+        HttpTester.Response response = request("CONNECT myhost:9999 HTTP/1.1", "otherhost:8888");
+        assertThat(response.getStatus(), is(200));
+        assertEquals("myhost", response.get("X-Server-Name"));
+        assertEquals("9999", response.get("X-Server-Port"));
     }
 }

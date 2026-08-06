@@ -899,27 +899,23 @@ public class RequestTest
         assertThat("request.getRequestURI", resultRequestURI.get(), is(nullValue()));
     }
 
+    /**
+     * The authority form of a CONNECT request target must be identical to the {@code Host} header
+     * (see <a href="https://www.rfc-editor.org/rfc/rfc7230#section-5.4">RFC 7230, section 5.4</a>),
+     * otherwise the request carries two conflicting host identities.
+     */
     @Test
     public void testConnectRequestURLDifferentThanHost() throws Exception
     {
-        final AtomicReference<String> resultRequestURL = new AtomicReference<>();
-        final AtomicReference<String> resultRequestURI = new AtomicReference<>();
-        _handler._checker = (request, response) ->
-        {
-            resultRequestURL.set(request.getRequestURL().toString());
-            resultRequestURI.set(request.getRequestURI());
-            return true;
-        };
+        _handler._checker = (request, response) -> true;
 
         String rawResponse = _connector.getResponse(
             "CONNECT myhost:9999 HTTP/1.1\n" +
-                "Host: otherhost:8888\n" + // per spec, this is ignored if request-target is authority-form
+                "Host: otherhost:8888\n" +
                 "Connection: close\n" +
                 "\n");
         HttpTester.Response response = HttpTester.parseResponse(rawResponse);
-        assertThat(response.getStatus(), is(HttpStatus.OK_200));
-        assertThat("request.getRequestURL", resultRequestURL.get(), is("http://myhost:9999"));
-        assertThat("request.getRequestURI", resultRequestURI.get(), is(nullValue()));
+        assertThat(response.getStatus(), is(HttpStatus.BAD_REQUEST_400));
     }
 
     @Test

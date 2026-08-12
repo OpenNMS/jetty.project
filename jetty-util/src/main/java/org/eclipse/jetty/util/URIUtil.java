@@ -1161,6 +1161,38 @@ public class URIUtil
     }
 
     /**
+     * Get the default port for some well known schemes
+     *
+     * @param scheme The scheme
+     * @return The default port or -1 if not known
+     */
+    public static int getDefaultPortForScheme(String scheme)
+    {
+        if (scheme == null)
+            return -1;
+
+        switch (StringUtil.asciiToLowerCase(scheme))
+        {
+            case "ftp":
+                return 21;
+            case "ssh":
+                return 22;
+            case "telnet":
+                return 23;
+            case "smtp":
+                return 25;
+            case "http":
+            case "ws":
+                return 80;
+            case "https":
+            case "wss":
+                return 443;
+            default:
+                return -1;
+        }
+    }
+
+    /**
      * Append scheme, host and port URI prefix, handling IPv6 address encoding and default ports
      *
      * @param url StringBuilder to append to

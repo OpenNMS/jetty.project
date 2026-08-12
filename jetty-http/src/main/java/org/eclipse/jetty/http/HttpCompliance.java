@@ -59,6 +59,7 @@ public enum HttpCompliance // TODO in Jetty-10 convert this enum to a class so t
      * {@link HttpComplianceSection#FIELD_COLON},
      * {@link HttpComplianceSection#TRANSFER_ENCODING_WITH_CONTENT_LENGTH},
      * {@link HttpComplianceSection#MULTIPLE_CONTENT_LENGTHS},
+     * {@link HttpComplianceSection#MISMATCHED_AUTHORITY},
      * {@link HttpComplianceSection#NO_AMBIGUOUS_PATH_SEGMENTS} and
      * {@link HttpComplianceSection#NO_AMBIGUOUS_PATH_SEPARATORS}.
      */
@@ -137,7 +138,8 @@ public enum HttpCompliance // TODO in Jetty-10 convert this enum to a class so t
                     HttpComplianceSection.NO_UTF16_ENCODINGS,
                     HttpComplianceSection.NO_USER_INFO,
                     HttpComplianceSection.NO_AMBIGUOUS_EMPTY_SEGMENT,
-                    HttpComplianceSection.NO_AMBIGUOUS_PATH_ENCODING));
+                    HttpComplianceSection.NO_AMBIGUOUS_PATH_ENCODING,
+                    HttpComplianceSection.MISMATCHED_AUTHORITY));
                 break;
 
             case "*":

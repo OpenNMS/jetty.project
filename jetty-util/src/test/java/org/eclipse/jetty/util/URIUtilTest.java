@@ -46,6 +46,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -794,5 +795,32 @@ public class URIUtilTest
         StringBuffer actual = new StringBuffer();
         URIUtil.appendSchemeHostPort(actual, scheme, server, port);
         assertEquals(expectedStr, actual.toString());
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+        "http,80",
+        "https,443",
+        "ws,80",
+        "wss,443",
+        "ftp,21",
+        "ssh,22",
+        "telnet,23",
+        "smtp,25",
+        "file,-1",
+        "bundle,-1",
+        "HTTP,80",
+        "HttPs,443",
+        "http+ssl,-1"
+    })
+    public void testGetDefaultPortForScheme(String scheme, int expectedPort)
+    {
+        assertEquals(expectedPort, URIUtil.getDefaultPortForScheme(scheme));
+    }
+
+    @Test
+    public void testGetDefaultPortForNullScheme()
+    {
+        assertEquals(-1, URIUtil.getDefaultPortForScheme(null));
     }
 }
